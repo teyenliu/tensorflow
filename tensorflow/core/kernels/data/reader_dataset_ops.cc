@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/lib/io/record_reader.h"
 #include "tensorflow/core/lib/io/zlib_compression_options.h"
 #include "tensorflow/core/lib/io/zlib_inputstream.h"
+#include "tensorflow/core/lib/io/lmdb_inputstream.h"
 
 namespace tensorflow {
 
@@ -686,6 +687,168 @@ class TFRecordDatasetOp : public DatasetOpKernel {
 
 REGISTER_KERNEL_BUILDER(Name("TFRecordDataset").Device(DEVICE_CPU),
                         TFRecordDatasetOp);
+
+/* Add new LMDBDatasetOp */
+
+REGISTER_KERNEL_BUILDER(Name("TFRecordDataset").Device(DEVICE_CPU),
+                        TFRecordDatasetOp);
+
+
+class LMDBDatasetOp : public DatasetOpKernel {
+ public:
+  using DatasetOpKernel::DatasetOpKernel;
+
+  void MakeDataset(OpKernelContext* ctx, DatasetBase** output) override {
+    const Tensor* filenames_tensor;
+    OP_REQUIRES_OK(ctx, ctx->input("filenames", &filenames_tensor));
+    OP_REQUIRES(
+        ctx, filenames_tensor->dims() <= 1,
+        errors::InvalidArgument("`filenames` must be a scalar or a vector."));
+
+    std::vector<string> filenames;
+    filenames.reserve(filenames_tensor->NumElements());
+    for (int i = 0; i < filenames_tensor->NumElements(); ++i) {
+      filenames.push_back(filenames_tensor->flat<string>()(i));
+    }
+
+    *output =
+        new Dataset(ctx, std::move(filenames));
+  }
+
+ private:
+  class Dataset : public GraphDatasetBase {
+   public:
+    explicit Dataset(OpKernelContext* ctx, std::vector<string> filenames)
+        : GraphDatasetBase(ctx),
+          filenames_(std::move(filenames)) {
+    }
+
+    std::unique_ptr<IteratorBase> MakeIterator(
+        const string& prefix) const override {
+      return std::unique_ptr<IteratorBase>(
+          new Iterator({this, strings::StrCat(prefix, "::LMDB")}));
+    }
+
+    const DataTypeVector& output_dtypes() const override {
+      static DataTypeVector* dtypes = new DataTypeVector({DT_STRING});
+      return *dtypes;
+    }
+
+    const std::vector<PartialTensorShape>& output_shapes() const override {
+      static std::vector<PartialTensorShape>* shapes =
+          new std::vector<PartialTensorShape>({{}});
+      return *shapes;
+    }
+
+    string DebugString() override { return "LMDBDatasetOp::Dataset"; }
+
+   protected:
+    Status AsGraphDefInternal(DatasetGraphDefBuilder* b,
+                              Node** output) const override {
+      Node* filenames = nullptr;
+      TF_RETURN_IF_ERROR(b->AddVector(filenames_, &filenames));
+      TF_RETURN_IF_ERROR(b->AddDataset(
+          this, {filenames}, output));
+      return Status::OK();
+    }
+
+   private:
+    class Iterator : public DatasetIterator<Dataset> {
+     public:
+      explicit Iterator(const Params& params)
+          : DatasetIterator<Dataset>(params) {}
+
+      Status GetNextInternal(IteratorContext* ctx,
+                             std::vector<Tensor>* out_tensors,
+                             bool* end_of_sequence) override {
+        mutex_lock l(mu_);
+        string key;
+        bool produced = false;
+        do {
+          // We are currently processing a file, so try to read the next record.
+          if (reader_) {
+            Tensor result_tensor(ctx->allocator({}), DT_STRING, {});
+            Status s = reader_->ReadCursor(&key, &result_tensor.scalar<string>()(),
+                                           &produced ,end_of_sequence);
+            if (s.ok()) {
+              out_tensors->emplace_back(std::move(result_tensor));
+              *end_of_sequence = false;
+              return Status::OK();
+            } else if (!errors::IsOutOfRange(s)) {
+              return s;
+            }
+
+            // We have reached the end of the current file, so maybe
+            // move on to next file.
+            ResetStreamsLocked();
+            ++current_file_index_;
+          }
+
+          // Iteration ends when there are no more files to process.
+          if (current_file_index_ == dataset()->filenames_.size()) {
+            *end_of_sequence = true;
+            return Status::OK();
+          }
+
+          TF_RETURN_IF_ERROR(SetupStreamsLocked(ctx->env()));
+        } while (true);
+      }
+
+     protected:
+      Status SaveInternal(IteratorStateWriter* writer) override {
+        mutex_lock l(mu_);
+        TF_RETURN_IF_ERROR(writer->WriteScalar(full_name("current_file_index"),
+                                               current_file_index_));
+        return Status::OK();
+      }
+
+      Status RestoreInternal(IteratorContext* ctx,
+                             IteratorStateReader* reader) override {
+        mutex_lock l(mu_);
+        ResetStreamsLocked();
+        int64 current_file_index;
+        TF_RETURN_IF_ERROR(reader->ReadScalar(full_name("current_file_index"),
+                                              &current_file_index));
+        current_file_index_ = size_t(current_file_index);
+        return Status::OK();
+      }
+
+     private:
+      // Sets up reader streams to read from the file at `current_file_index_`.
+      Status SetupStreamsLocked(Env* env) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+        if (current_file_index_ >= dataset()->filenames_.size()) {
+          return errors::InvalidArgument(
+              "current_file_index_:", current_file_index_,
+              " >= filenames_.size():", dataset()->filenames_.size());
+        }
+
+        // Actually move on to next file.
+        const string& next_filename =
+            dataset()->filenames_[current_file_index_];
+        //TF_RETURN_IF_ERROR(env->NewRandomAccessFile(next_filename, &file_));
+        reader_.reset(new io::LMDBInputStream(next_filename));
+        return Status::OK();
+      }
+
+      // Resets all reader streams.
+      void ResetStreamsLocked() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+        reader_.reset();
+      }
+
+      mutex mu_;
+      size_t current_file_index_ GUARDED_BY(mu_) = 0;
+
+      // `reader_` will borrow the object that `file_` points to, so
+      // we must destroy `reader_` before `file_`.
+      std::unique_ptr<io::LMDBInputStream> reader_ GUARDED_BY(mu_);
+    };
+
+    const std::vector<string> filenames_;
+  };
+};
+
+REGISTER_KERNEL_BUILDER(Name("LMDBDataset").Device(DEVICE_CPU),
+                        LMDBDatasetOp);
 
 }  // namespace
 
