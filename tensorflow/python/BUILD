@@ -425,6 +425,7 @@ tf_cc_shared_object(
     linkopts = select({
         "//conditions:default": [
             "-lm",
+            "-llmdb",
         ],
         "//tensorflow:darwin": [],
         "//tensorflow:windows": [],
