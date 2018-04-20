@@ -369,6 +369,7 @@ cc_library(
         "lib/hash/hash.h",
         "lib/histogram/histogram.h",
         "lib/io/buffered_inputstream.h",
+        "lib/io/lmdb_inputstream.h",
         "lib/io/compression.h",
         "lib/io/inputstream_interface.h",
         "lib/io/path.h",
@@ -1634,6 +1635,7 @@ LIB_INTERNAL_PUBLIC_HEADERS = tf_additional_lib_hdrs() + [
     "lib/hash/hash.h",
     "lib/io/inputbuffer.h",
     "lib/io/iterator.h",
+    "lib/io/lmdb_inputstream.h",
     "lib/io/snappy/snappy_inputbuffer.h",
     "lib/io/snappy/snappy_outputbuffer.h",
     "lib/io/zlib_compression_options.h",
@@ -1686,6 +1688,7 @@ cc_library(
         "//conditions:default": [
             "-ldl",
             "-lpthread",
+            "-llmdb",
         ],
     }),
     deps = tf_additional_lib_deps() + [

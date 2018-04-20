@@ -1,0 +1,11 @@
+op {
+  graph_op_name: "LMDBDataset"
+  in_arg {
+    name: "filenames"
+    description: <<END
+A scalar or vector containing the name(s) of the file(s) to be
+read.
+END
+  }
+  summary: "Creates a dataset that emits the records from one or more LMDB files."
+}

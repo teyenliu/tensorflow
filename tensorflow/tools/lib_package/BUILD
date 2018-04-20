@@ -136,6 +136,7 @@ genrule(
         "@protobuf_archive//:LICENSE",
         "@snappy//:COPYING",
         "@zlib_archive//:zlib.h",
+        "@lmdb_archive//:lmdb.h",
     ] + if_mkl([
         "//third_party/mkl:LICENSE",
     ]),
@@ -173,6 +174,7 @@ genrule(
         "@protobuf_archive//:LICENSE",
         "@snappy//:COPYING",
         "@zlib_archive//:zlib.h",
+        "@lmdb_archive//:lmdb.h",
     ] + if_mkl([
         "//third_party/mkl:LICENSE",
     ]),

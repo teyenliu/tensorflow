@@ -223,6 +223,35 @@ class TFRecordDataset(dataset_ops.Dataset):
   def output_types(self):
     return self._impl.output_types
 
+@tf_export("data.LMDBDataset")
+class LMDBDataset(dataset_ops.Dataset):
+  """A `Dataset` comprising records from one or more LMDB files."""
+
+  def __init__(self, filenames):
+    """Creates a `LMDBDataset`.
+
+    Args:
+      filenames: A `tf.string` tensor containing one or more filenames.
+    """
+    super(LMDBDataset, self).__init__()
+    self._filenames = ops.convert_to_tensor(
+        filenames, dtype=dtypes.string, name="filenames")
+
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.lmdb_dataset(self._filenames)
+
+  @property
+  def output_classes(self):
+    return ops.Tensor
+
+  @property
+  def output_shapes(self):
+    return tensor_shape.TensorShape([])
+
+  @property
+  def output_types(self):
+    return dtypes.string
+
 
 @tf_export("data.FixedLengthRecordDataset")
 class FixedLengthRecordDataset(dataset_ops.Dataset):

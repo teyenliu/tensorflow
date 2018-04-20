@@ -599,15 +599,18 @@ tf_cc_binary(
         "//tensorflow:darwin": [
             "-lm",
             "-lpthread",
+            "-llmdb",
         ],
         "//tensorflow:ios": [
             "-lm",
             "-lpthread",
+            "-llmdb",
         ],
         "//conditions:default": [
             "-lm",
             "-lpthread",
             "-lrt",
+            "-llmdb",
         ],
     }),
     deps = [

@@ -30651,6 +30651,18 @@ op {
   is_stateful: true
 }
 op {
+  name: "LMDBDataset"
+  input_arg {
+    name: "filenames"
+    type: DT_STRING
+  }
+  output_arg {
+    name: "handle"
+    type: DT_VARIANT
+  }
+  is_stateful: true
+}
+op {
   name: "TFRecordReader"
   output_arg {
     name: "reader_handle"

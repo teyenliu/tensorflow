@@ -411,6 +411,13 @@ REGISTER_OP("TFRecordDataset")
                       // stateful to inhibit constant folding.
     .SetShapeFn(shape_inference::ScalarShape);
 
+REGISTER_OP("LMDBDataset")
+    .Input("filenames: string")
+    .Output("handle: variant")
+    .SetIsStateful()  // TODO(b/65524810): Source dataset ops must be marked
+                      // stateful to inhibit constant folding.
+    .SetShapeFn(shape_inference::ScalarShape);
+
 REGISTER_OP("Iterator")
     .Output("handle: resource")
     .Attr("shared_name: string")
