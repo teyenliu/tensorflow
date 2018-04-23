@@ -413,8 +413,6 @@ REGISTER_OP("TFRecordDataset")
 
 REGISTER_OP("LMDBDataset")
     .Input("filenames: string")
-    .Input("compression_type: string")
-    .Input("buffer_size: int64")
     .Output("handle: variant")
     .SetIsStateful()  // TODO(b/65524810): Source dataset ops must be marked
                       // stateful to inhibit constant folding.

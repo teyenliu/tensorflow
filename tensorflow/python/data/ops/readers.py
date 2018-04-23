@@ -225,49 +225,33 @@ class TFRecordDataset(dataset_ops.Dataset):
 
 @tf_export("data.LMDBDataset")
 class LMDBDataset(dataset_ops.Dataset):
-  """A `Dataset` comprising records from one or more TFRecord files."""
+  """A `Dataset` comprising records from one or more LMDB files."""
 
-  def __init__(self, filenames, num_parallel_reads=None):
-    """Creates a `TFRecordDataset` to read for one or more TFRecord files.
-
-    NOTE: The `num_parallel_reads` argument can be used to improve performance
-    when reading from a remote filesystem.
+  def __init__(self, filenames):
+    """Creates a `LMDBDataset`.
 
     Args:
-      filenames: A `tf.string` tensor or `tf.data.Dataset` containing one or
-        more filenames.
-      num_parallel_reads: (Optional.) A `tf.int64` scalar representing the
-        number of files to read in parallel. Defaults to reading files
-        sequentially.
-
-    Raises:
-      TypeError: If any argument does not have the expected type.
-      ValueError: If any argument does not have the expected shape.
+      filenames: A `tf.string` tensor containing one or more filenames.
     """
     super(LMDBDataset, self).__init__()
-    if isinstance(filenames, dataset_ops.Dataset):
-      if filenames.output_types != dtypes.string:
-        raise TypeError(
-            "`filenames` must be a `tf.data.Dataset` of `tf.string` elements.")
-      if not filenames.output_shapes.is_compatible_with(tensor_shape.scalar()):
-        raise ValueError(
-            "`filenames` must be a `tf.data.Dataset` of scalar `tf.string` "
-            "elements.")
-    else:
-      filenames = ops.convert_to_tensor(filenames, dtype=dtypes.string)
-      filenames = array_ops.reshape(filenames, [-1], name="flat_filenames")
-      filenames = dataset_ops.Dataset.from_tensor_slices(filenames)
+    self._filenames = ops.convert_to_tensor(
+        filenames, dtype=dtypes.string, name="filenames")
 
-    def read_one_file(filename):
-      return _TFRecordDataset(filename)
+  def _as_variant_tensor(self):
+    return gen_dataset_ops.lmdb_dataset(self._filenames)
 
-    if num_parallel_reads is None:
-      self._impl = filenames.flat_map(read_one_file)
-    else:
-      self._impl = ParallelInterleaveDataset(
-          filenames, read_one_file, cycle_length=num_parallel_reads,
-          block_length=1, sloppy=False, buffer_output_elements=None,
-          prefetch_input_elements=None)
+  @property
+  def output_classes(self):
+    return ops.Tensor
+
+  @property
+  def output_shapes(self):
+    return tensor_shape.TensorShape([])
+
+  @property
+  def output_types(self):
+    return dtypes.string
+
 
 @tf_export("data.FixedLengthRecordDataset")
 class FixedLengthRecordDataset(dataset_ops.Dataset):

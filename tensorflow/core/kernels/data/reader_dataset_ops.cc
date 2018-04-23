@@ -690,10 +690,6 @@ REGISTER_KERNEL_BUILDER(Name("TFRecordDataset").Device(DEVICE_CPU),
 
 /* Add new LMDBDatasetOp */
 
-REGISTER_KERNEL_BUILDER(Name("TFRecordDataset").Device(DEVICE_CPU),
-                        TFRecordDatasetOp);
-
-
 class LMDBDatasetOp : public DatasetOpKernel {
  public:
   using DatasetOpKernel::DatasetOpKernel;

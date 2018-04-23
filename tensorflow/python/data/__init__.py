@@ -21,6 +21,7 @@ See the @{$datasets$Importing Data} Programmer's Guide for an overview.
 @@FixedLengthRecordDataset
 @@TextLineDataset
 @@TFRecordDataset
+@@LMDBDataset
 """
 
 from __future__ import absolute_import
