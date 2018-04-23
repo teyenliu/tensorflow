@@ -84,7 +84,8 @@ Status LMDBInputStream::ReadCursor(string* key, string* value, bool* produced,
       if (Seek(MDB_NEXT) == false) {
         *at_end = true;
         // Raise the error of at the end of LMDB record
-        return Status(error::OUT_OF_RANGE, "Reach the end of LMDB record");
+        return Status::OK();
+        //return Status(error::OUT_OF_RANGE, "Reach the end of LMDB record");
       }
     }
     *key = string(static_cast<const char*>(mdb_key_.mv_data), mdb_key_.mv_size);
