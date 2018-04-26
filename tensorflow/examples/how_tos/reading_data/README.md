@@ -24,4 +24,4 @@ $ python fully_connected_reader_lmdb.py --train_dir ./lmdb_data --num_epochs 10 
 ### The performance result
 The performance result shows that LMDBDataset and TFRecordDataset APIs have almost the same performance speed to read data.
 
-<img src="reading_data/MNIST_LMDBDataset_vs_TFRecordDataset.JPG" alt="Intro Tutorial" width="284"/>
+<img src="MNIST_LMDBDataset_vs_TFRecordDataset.JPG" alt="Perf Result" width="284"/>
