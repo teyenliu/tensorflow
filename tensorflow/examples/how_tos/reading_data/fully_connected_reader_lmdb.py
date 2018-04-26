@@ -35,6 +35,7 @@ import time
 import tensorflow as tf
 
 from tensorflow.examples.tutorials.mnist import mnist
+from tqdm import tqdm
 
 # Basic model parameters as external flags.
 FLAGS = None
@@ -50,8 +51,11 @@ def decode(serialized_example):
       serialized_example,
       # Defaults are not specified since both keys are required.
       features={
-          'image_raw': tf.FixedLenFeature([], tf.string),
+          'height': tf.FixedLenFeature([], tf.int64),
+          'width': tf.FixedLenFeature([], tf.int64),
+          'depth': tf.FixedLenFeature([], tf.int64),
           'label': tf.FixedLenFeature([], tf.int64),
+          'image_raw': tf.FixedLenFeature([], tf.string),
       })
 
   # Convert from a scalar string tensor (whose single string has
@@ -113,9 +117,9 @@ def inputs(train, batch_size, num_epochs):
 
     # The map transformation takes a function and applies it to every element
     # of the dataset.
-    dataset = dataset.map(decode)
-    dataset = dataset.map(augment)
-    dataset = dataset.map(normalize)
+    dataset = dataset.map(decode, num_parallel_calls=4)
+    dataset = dataset.map(augment, num_parallel_calls=4)
+    dataset = dataset.map(normalize, num_parallel_calls=4)
 
     # The shuffle transformation uses a finite-sized buffer to shuffle elements
     # in memory. The parameter is the number of elements in the buffer. For
@@ -159,24 +163,29 @@ def run_training():
       sess.run(init_op)
       try:
         step = 0
-        while True:  # Train until OutOfRangeError
-          start_time = time.time()
+        with tqdm(total=1000, leave=True, smoothing=0.2) as pbar:
+          while True:  # Train until OutOfRangeError
+            start_time = time.time()
 
-          # Run one step of the model.  The return values are
-          # the activations from the `train_op` (which is
-          # discarded) and the `loss` op.  To inspect the values
-          # of your ops or variables, you may include them in
-          # the list passed to sess.run() and the value tensors
-          # will be returned in the tuple from the call.
-          _, loss_value = sess.run([train_op, loss])
+            # Run one step of the model.  The return values are
+            # the activations from the `train_op` (which is
+            # discarded) and the `loss` op.  To inspect the values
+            # of your ops or variables, you may include them in
+            # the list passed to sess.run() and the value tensors
+            # will be returned in the tuple from the call.
+            if (FLAGS.perf == 'training'):
+              _, loss_value = sess.run([train_op, loss])
+            else:
+              _img, _lbl = sess.run([image_batch, label_batch])
 
-          duration = time.time() - start_time
+            duration = time.time() - start_time
 
-          # Print an overview fairly often.
-          if step % 100 == 0:
-            print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value,
+            # Print an overview fairly often.
+            if ((step % 100 == 0) and (FLAGS.perf == 'training')):
+              print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value,
                                                        duration))
-          step += 1
+            step += 1
+            pbar.update()
       except tf.errors.OutOfRangeError:
         print('Done training for %d epochs, %d steps.' % (FLAGS.num_epochs,
                                                           step))
@@ -214,5 +223,9 @@ if __name__ == '__main__':
       type=str,
       default='/tmp/data',
       help='Directory with the training data.')
+  parser.add_argument(
+      '--perf', choices=['training', 'datapipeline'], default='training',
+      help='To use the whole training process or only the input data pipline.')
+
   FLAGS, unparsed = parser.parse_known_args()
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
