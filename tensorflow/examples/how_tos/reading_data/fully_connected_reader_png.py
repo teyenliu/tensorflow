@@ -1,0 +1,261 @@
+# Copyright 2018 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""Train and Eval the MNIST network.
+
+This version is like fully_connected_feed.py but uses data converted
+to a TFRecords file containing tf.train.Example protocol buffers.
+See:
+https://www.tensorflow.org/programmers_guide/reading_data#reading_from_files
+for context.
+
+YOU MUST run convert_to_records before running this (but you only need to
+run it once).
+"""
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import argparse
+import os.path
+import sys
+import time
+import numpy as np
+import tensorflow as tf
+
+from tensorflow.python.framework import dtypes
+from tensorflow.python.framework.ops import convert_to_tensor
+
+from tensorflow.examples.tutorials.mnist import mnist
+from tqdm import tqdm
+
+# Basic model parameters as external flags.
+FLAGS = None
+
+# Constants used for dealing with the files, matches convert_to_records.
+TRAIN_FILE = 'training'
+VALIDATION_FILE = 'testing'
+
+
+def get_File(file_dir):
+    # The images in each subfolder
+    images = []
+    # The subfolders
+    subfolders = []
+
+    # Using "os.walk" function to grab all the files in each folder
+    for dirPath, dirNames, fileNames in os.walk(file_dir):
+        for name in fileNames:
+            images.append(os.path.join(dirPath, name))
+
+        for name in dirNames:
+            subfolders.append(os.path.join(dirPath, name))
+
+    # To record the labels of the image dataset
+    labels = []
+    count = 0
+    for a_folder in subfolders:
+        n_img = len(os.listdir(a_folder))
+        labels = np.append(labels, n_img * [count])
+        count+=1
+
+    subfolders = np.array([images, labels])
+    subfolders = subfolders.transpose()
+
+    image_list = list(subfolders[:, 0])
+    label_list = list(subfolders[:, 1])
+    label_list = [int(float(i)) for i in label_list]
+    return image_list, label_list
+
+
+
+def decode(filename, label):
+  """Input parser for samples of the training set."""
+  # convert label number into one-hot-encoding
+  #one_hot = tf.one_hot(label, 10)
+
+  # load and preprocess the image
+  img_string = tf.read_file(filename)
+  img_decoded = tf.image.decode_png(img_string, channels=1)
+  # to flatten the image 
+  img_reshaped = tf.reshape(img_decoded,[-1])
+
+  return img_reshaped, label
+
+
+def augment(image, label):
+  """Placeholder for data augmentation."""
+  # OPTIONAL: Could reshape into a 28x28 image and apply distortions
+  # here.  Since we are not applying any distortions in this
+  # example, and the next step expects the image to be flattened
+  # into a vector, we don't bother.
+  return image, label
+
+
+def normalize(image, label):
+  """Convert `image` from [0, 255] -> [-0.5, 0.5] floats."""
+  image = tf.cast(image, tf.float32) * (1. / 255) - 0.5
+  return image, label
+
+
+def inputs(train, batch_size, num_epochs):
+  """Reads input data num_epochs times.
+
+  Args:
+    train: Selects between the training (True) and validation (False) data.
+    batch_size: Number of examples per returned batch.
+    num_epochs: Number of times to read the input data, or 0/None to
+       train forever.
+
+  Returns:
+    A tuple (images, labels), where:
+    * images is a float tensor with shape [batch_size, mnist.IMAGE_PIXELS]
+      in the range [-0.5, 0.5].
+    * labels is an int32 tensor with shape [batch_size] with the true label,
+      a number in the range [0, mnist.NUM_CLASSES).
+
+    This function creates a one_shot_iterator, meaning that it will only iterate
+    over the dataset once. On the other hand there is no special initialization
+    required.
+  """
+  if not num_epochs:
+    num_epochs = None
+  filepath = os.path.join(FLAGS.train_dir, TRAIN_FILE
+                          if train else VALIDATION_FILE)
+
+  with tf.name_scope('input'):
+
+    img_paths, labels = get_File(filepath)
+    img_paths = convert_to_tensor(img_paths, dtype=dtypes.string)
+    labels = convert_to_tensor(labels, dtype=dtypes.int32)
+
+    # TFRecordDataset opens a binary file and reads one record at a time.
+    # `filename` could also be a list of filenames, which will be read in order.
+    # create dataset
+    dataset = tf.data.Dataset.from_tensor_slices((img_paths, labels))
+
+ 
+    # The map transformation takes a function and applies it to every element
+    # of the dataset.
+    dataset = dataset.map(decode, num_parallel_calls=4)
+    dataset = dataset.map(augment, num_parallel_calls=4)
+    dataset = dataset.map(normalize, num_parallel_calls=4)
+
+    # The shuffle transformation uses a finite-sized buffer to shuffle elements
+    # in memory. The parameter is the number of elements in the buffer. For
+    # completely uniform shuffling, set the parameter to be the same as the
+    # number of elements in the dataset.
+    dataset = dataset.shuffle(1000 + 3 * batch_size)
+
+    dataset = dataset.repeat(num_epochs)
+    dataset = dataset.batch(batch_size)
+
+    iterator = dataset.make_one_shot_iterator()
+  return iterator.get_next()
+
+
+def run_training():
+  """Train MNIST for a number of steps."""
+
+  # Tell TensorFlow that the model will be built into the default Graph.
+  with tf.Graph().as_default():
+    # Input images and labels.
+    image_batch, label_batch = inputs(
+        train=True, batch_size=FLAGS.batch_size, num_epochs=FLAGS.num_epochs)
+
+    # Build a Graph that computes predictions from the inference model.
+    logits = mnist.inference(image_batch, FLAGS.hidden1, FLAGS.hidden2)
+
+    # Add to the Graph the loss calculation.
+    loss = mnist.loss(logits, label_batch)
+
+    # Add to the Graph operations that train the model.
+    train_op = mnist.training(loss, FLAGS.learning_rate)
+
+    # The op for initializing the variables.
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
+
+    # Create a session for running operations in the Graph.
+    with tf.Session() as sess:
+      # Initialize the variables (the trained variables and the
+      # epoch counter).
+      sess.run(init_op)
+      try:
+        step = 0
+        with tqdm(total=10000, leave=True, smoothing=0.2) as pbar:
+          while True:  # Train until OutOfRangeError
+            start_time = time.time()
+
+            # Run one step of the model.  The return values are
+            # the activations from the `train_op` (which is
+            # discarded) and the `loss` op.  To inspect the values
+            # of your ops or variables, you may include them in
+            # the list passed to sess.run() and the value tensors
+            # will be returned in the tuple from the call.
+            if (FLAGS.perf == 'training'):
+              _, loss_value = sess.run([train_op, loss])
+            else:
+              _img, _lbl = sess.run([image_batch, label_batch])
+
+            duration = time.time() - start_time
+
+            # Print an overview fairly often.
+            if ((step % 100 == 0) and (FLAGS.perf == 'training')):
+              print('Step %d: loss = %.2f (%.3f sec)' % (step, loss_value,
+                                                       duration))
+            step += 1
+            pbar.update()
+      except tf.errors.OutOfRangeError:
+        print('Done training for %d epochs, %d steps.' % (FLAGS.num_epochs,
+                                                          step))
+
+
+def main(_):
+  run_training()
+
+
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+      '--learning_rate',
+      type=float,
+      default=0.003,
+      help='Initial learning rate.')
+  parser.add_argument(
+      '--num_epochs',
+      type=int,
+      default=2,
+      help='Number of epochs to run trainer.')
+  parser.add_argument(
+      '--hidden1',
+      type=int,
+      default=128,
+      help='Number of units in hidden layer 1.')
+  parser.add_argument(
+      '--hidden2',
+      type=int,
+      default=32,
+      help='Number of units in hidden layer 2.')
+  parser.add_argument('--batch_size', type=int, default=100, help='Batch size.')
+  parser.add_argument(
+      '--train_dir',
+      type=str,
+      default='/tmp/data',
+      help='Directory with the training data.')
+  parser.add_argument(
+      '--perf', choices=['training', 'datapipeline'], default='training',
+      help='To use the whole training process or only the input data pipline.')
+  FLAGS, unparsed = parser.parse_known_args()
+  tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
